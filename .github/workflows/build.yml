@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Checkout Code
+    - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Set up Python
@@ -17,23 +17,7 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Get Date
-      id: get-date
-      run: echo "date=$(date -u +%Y%m%d)" >> $GITHUB_ENV
-
-    - name: Cache Buildozer Global Directory
-      uses: actions/cache@v3
-      with:
-        path: .buildozer_global
-        key: buildozer-global-${{ hashFiles('buildozer.spec') }}
-
-    - name: Cache .buildozer Directory
-      uses: actions/cache@v3
-      with:
-        path: .buildozer
-        key: ${{ runner.os }}-${{ env.date }}-${{ hashFiles('buildozer.spec') }}
-
-    - name: Install Dependencies
+    - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
@@ -55,19 +39,26 @@ jobs:
           uuid-dev \
           libnss3 \
           libx11-dev \
-          libandroid-spawn-dev
+          libandroid-spawn-dev \
+          python3-pip
 
         python3 -m pip install --upgrade pip
-        python3 -m pip install --user buildozer cython
+        pip install --user buildozer cython
+
+    - name: Cache .buildozer
+      uses: actions/cache@v3
+      with:
+        path: .buildozer
+        key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
 
     - name: Build APK
-      uses: ArtemSBulgakov/buildozer-action@v1
-      with:
-        command: buildozer android debug
-        buildozer_version: stable
+      run: |
+        export PATH=$HOME/.local/bin:$PATH
+        buildozer android debug
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
         path: ./bin/*.apk
+
