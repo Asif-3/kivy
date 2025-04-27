@@ -1,4 +1,4 @@
-name: CI
+name: Build Kivy APK
 
 on:
   push:
@@ -12,10 +12,14 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v4
 
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
     - name: Get Date
       id: get-date
-      run: echo "date=$(/bin/date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
-      shell: bash
+      run: echo "date=$(date -u +%Y%m%d)" >> $GITHUB_ENV
 
     - name: Cache Buildozer Global Directory
       uses: actions/cache@v3
@@ -27,17 +31,43 @@ jobs:
       uses: actions/cache@v3
       with:
         path: .buildozer
-        key: ${{ runner.os }}-${{ steps.get-date.outputs.date }}-${{ hashFiles('buildozer.spec') }}
+        key: ${{ runner.os }}-${{ env.date }}-${{ hashFiles('buildozer.spec') }}
 
-    - name: Build with Buildozer
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          ccache \
+          git \
+          libffi-dev \
+          libssl-dev \
+          libsqlite3-dev \
+          zlib1g-dev \
+          libncursesw5-dev \
+          libbz2-dev \
+          libgdbm-dev \
+          liblzma-dev \
+          libreadline-dev \
+          libgdbm-compat-dev \
+          openssl \
+          bzip2 \
+          uuid-dev \
+          libnss3 \
+          libx11-dev \
+          libandroid-spawn-dev
+
+        pip install --upgrade pip
+        pip install --user buildozer cython
+
+    - name: Build APK
       uses: ArtemSBulgakov/buildozer-action@v1
-      id: buildozer
       with:
         command: buildozer android debug
         buildozer_version: stable
 
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v3
+    - name: Upload APK
+      uses: actions/upload-artifact@v2
       with:
-        name: package
-        path: ${{ steps.buildozer.outputs.filename }}
+        name: app-debug.apk
+        path: ./bin/*.apk
