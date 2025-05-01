@@ -1,5 +1,4 @@
 [app]
-
 # (str) Title of your application
 title = Movie Recommendation System
 
@@ -15,14 +14,14 @@ source.dir = .
 # (list) Source files to include (leave empty to include all the files)
 source.include_exts = py,png,jpg,kv,atlas,csv
 
-# (list) List of inclusions using pattern matching - fixed the pattern format
+# (list) List of inclusions using pattern matching
 source.include_patterns = assets/*,images/*.png,images/*.csv
 
 # (str) Application versioning
 version = 0.1
 
 # (list) Application requirements - use specific versions for stability
-requirements = python3,kivy==2.1.0,kivymd==0.104.2,pillow==8.3.1
+requirements = python3,kivy==2.1.0,kivymd==0.104.2,pillow==8.3.1,pandas==1.5.3,scikit-learn==1.0.2,requests==2.28.1
 
 # (str) Supported orientations
 orientation = portrait
@@ -32,7 +31,7 @@ android.permissions = android.permission.INTERNET
 android.api = 31
 android.minapi = 21
 android.sdk = 31
-android.ndk = 23b
+android.ndk = 23.1.7779620
 android.ndk_api = 21
 android.archs = arm64-v8a, armeabi-v7a
 android.allow_backup = True
