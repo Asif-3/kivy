@@ -21,11 +21,12 @@ jobs:
           python-version: '3.8'
           architecture: 'x64'
           
-      - name: Setup Java 11
+      # Updated to Java 17 to fix compatibility issue with Android SDK tools
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '11'
+          java-version: '17'
           
       - name: Install system dependencies
         run: |
@@ -34,16 +35,40 @@ jobs:
             autoconf libtool pkg-config zlib1g-dev libncurses-dev \
             cmake libffi-dev libssl-dev
       
-      # Set up Android SDK
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          cmdline-tools-version: latest
-      
-      # Install specific Android SDK components needed
-      - name: Install Android SDK components
+      # Use direct command to install Android SDK rather than the action
+      - name: Setup Android SDK
         run: |
-          yes | sdkmanager --install "build-tools;30.0.3" "platforms;android-30" "platform-tools"
+          wget https://dl.google.com/android/repository/commandlinetools-linux-8512546_latest.zip -O cmdline-tools.zip
+          mkdir -p ${ANDROID_HOME}/cmdline-tools
+          unzip -q cmdline-tools.zip -d ${ANDROID_HOME}/cmdline-tools
+          mv ${ANDROID_HOME}/cmdline-tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools/latest
+          echo "y" | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-31" "build-tools;30.0.3" "ndk;23.1.7779620"
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          
+      - name: Fix buildozer.spec
+        run: |
+          # Fix package.name with no space after equals
+          sed -i 's/package.name =asif/package.name = asif/' buildozer.spec
+          
+          # Fix source.include_exts
+          sed -i 's/source.include_exts = py,png,jpg,kv,atlas.csv/source.include_exts = py,png,jpg,kv,atlas,csv/' buildozer.spec
+          
+          # Fix source.include_patterns
+          sed -i 's|source.include_patterns = assets/,images/.png/.csv|source.include_patterns = assets/*,images/*.png,images/*.csv|' buildozer.spec
+          
+          # Add Android permissions
+          sed -i 's|#android.permissions = .*|android.permissions = android.permission.INTERNET|' buildozer.spec
+          
+          # Set Android API levels
+          sed -i 's|#android.api = .*|android.api = 31|' buildozer.spec
+          sed -i 's|#android.minapi = .*|android.minapi = 21|' buildozer.spec
+          
+          # Accept license automatically
+          sed -i 's|# android.accept_sdk_license = .*|android.accept_sdk_license = True|' buildozer.spec
+          
+          # Skip updates to speed up build
+          sed -i 's|# android.skip_update = .*|android.skip_update = True|' buildozer.spec
           
       - name: Cache Buildozer global directory
         uses: actions/cache@v3
@@ -55,51 +80,24 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install --upgrade Cython==0.29.33 virtualenv
-          python -m pip install --upgrade buildozer==1.5.0
-          
-      # Fix package name space issue in buildozer.spec
-      - name: Fix buildozer.spec
-        run: |
-          sed -i 's/package.name =asif/package.name = asif/' buildozer.spec
-          sed -i 's/source.include_exts = py,png,jpg,kv,atlas.csv/source.include_exts = py,png,jpg,kv,atlas,csv/' buildozer.spec
-          sed -i 's/source.include_patterns = assets\/,images\/.png\/.csv/source.include_patterns = assets\/*,images\/*.png,images\/*.csv/' buildozer.spec
-          # Add necessary Android settings
-          if ! grep -q "android.api =" buildozer.spec; then
-            sed -i '/^\[app\]/a android.api = 30' buildozer.spec
-          fi
-          if ! grep -q "android.minapi =" buildozer.spec; then
-            sed -i '/^\[app\]/a android.minapi = 21' buildozer.spec
-          fi
-          if ! grep -q "android.sdk =" buildozer.spec; then
-            sed -i '/^\[app\]/a android.sdk = 30' buildozer.spec
-          fi
-          if ! grep -q "android.ndk =" buildozer.spec; then
-            sed -i '/^\[app\]/a android.ndk = 25b' buildozer.spec
-          fi
-          if ! grep -q "android.ndk_api =" buildozer.spec; then
-            sed -i '/^\[app\]/a android.ndk_api = 21' buildozer.spec
-          fi
-          if ! grep -q "android.accept_sdk_license =" buildozer.spec; then
-            sed -i '/^\[app\]/a android.accept_sdk_license = True' buildozer.spec
-          fi
-          # Point to pre-installed build tools
-          echo "android.sdk_path = /usr/local/lib/android/sdk" >> buildozer.spec
-          # Add internet permission
-          echo "android.permissions = android.permission.INTERNET" >> buildozer.spec
+          python -m pip install --upgrade buildozer
           
       - name: Configure Git for https connections
         run: |
           git config --global http.sslVerify false
-          export GIT_HTTP_LOW_SPEED_LIMIT=1000
-          export GIT_HTTP_LOW_SPEED_TIME=300
+          git config --global http.postBuffer 1048576000
           
       - name: Build with Buildozer
         run: |
-          export GRADLE_OPTS="-Xmx4096m -XX:MaxPermSize=4096m"
-          export JAVA_OPTS="-Xmx4096m -XX:MaxPermSize=4096m"
-          export PATH=$PATH:/usr/local/lib/android/sdk/build-tools/30.0.3
-          export ANDROID_HOME=/usr/local/lib/android/sdk
+          # Set environment variables to avoid Git download timeouts
+          export GIT_HTTP_LOW_SPEED_LIMIT=1000
+          export GIT_HTTP_LOW_SPEED_TIME=300
+          
+          # Build with verbose output
           buildozer android debug -v
+        env:
+          JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.*/x64
+          ANDROID_HOME: /usr/local/lib/android/sdk
           
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
