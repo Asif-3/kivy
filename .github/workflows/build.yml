@@ -14,48 +14,92 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
+        
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.8'
           architecture: 'x64'
-
-      - name: Setup Java 17
+          
+      - name: Setup Java 11
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
-
-      - name: Set JAVA_HOME
-        run: echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
-
+          java-version: '11'
+          
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip \
-            autoconf libtool pkg-config zlib1g-dev libncurses5-dev \
-            libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
-
+          sudo apt-get install -y git zip unzip python3-pip \
+            autoconf libtool pkg-config zlib1g-dev libncurses-dev \
+            cmake libffi-dev libssl-dev
+            
+      - name: Initialize Buildozer
+        run: |
+          # Create buildozer.spec if it doesn't exist
+          if [ ! -f buildozer.spec ]; then
+            buildozer init
+            # Modify buildozer.spec for our needs
+            sed -i 's/^requirements =.*/requirements = python3,kivy/' buildozer.spec
+            sed -i 's/^#android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
+          fi
+          
+      - name: Cache Buildozer global directory
+        uses: actions/cache@v3
+        with:
+          path: ~/.buildozer
+          key: buildozer-global-${{ hashFiles('buildozer.spec') }}
+          
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install Cython==0.29.33 buildozer
-          if [ -f requirements.txt ]; then
-            python -m pip install -r requirements.txt
-          fi
-
+          python -m pip install --upgrade Cython==0.29.33 virtualenv
+          python -m pip install --upgrade buildozer
+          
+      - name: Download external dependencies
+        run: |
+          # Create directories for manual library placement if they don't exist yet
+          mkdir -p ~/.buildozer/android/platform/
+          
+          # Pre-download problematic libraries
+          mkdir -p /tmp/kivy-deps
+          cd /tmp/kivy-deps
+          git clone https://github.com/libsdl-org/jpeg.git
+          git clone https://github.com/libsdl-org/libpng.git
+          git clone https://github.com/libsdl-org/libtiff.git
+          git clone https://github.com/libsdl-org/libwebp.git
+          
       - name: Build with Buildozer
         run: |
-          buildozer android debug
-
+          # Set environment variable to increase Git clone timeout
+          export GIT_HTTP_LOW_SPEED_LIMIT=1000
+          export GIT_HTTP_LOW_SPEED_TIME=300
+          
+          # Try building with verbose output
+          buildozer android debug -v
+          
+          # If the build fails due to download errors, try to use pre-downloaded libs
+          if [ $? -ne 0 ] && [ -d "/tmp/kivy-deps" ]; then
+            echo "Initial build failed. Trying with pre-downloaded dependencies..."
+            BOOTSTRAP_DIR=$(find ~/.buildozer -name "bootstrap_builds" -type d | head -n 1)
+            if [ -n "$BOOTSTRAP_DIR" ]; then
+              mkdir -p $BOOTSTRAP_DIR/sdl2/jni/SDL2_image/external/
+              cp -r /tmp/kivy-deps/jpeg $BOOTSTRAP_DIR/sdl2/jni/SDL2_image/external/
+              cp -r /tmp/kivy-deps/libpng $BOOTSTRAP_DIR/sdl2/jni/SDL2_image/external/
+              cp -r /tmp/kivy-deps/libtiff $BOOTSTRAP_DIR/sdl2/jni/SDL2_image/external/
+              cp -r /tmp/kivy-deps/libwebp $BOOTSTRAP_DIR/sdl2/jni/SDL2_image/external/
+              # Try building again
+              buildozer android debug -v
+            fi
+          fi
+          
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: bin/*.apk
           if-no-files-found: error
-
+          
       # Optional: Create Release (when pushing tag)
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
