@@ -6,7 +6,7 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch:
+  workflow_dispatch:  # Allows manual triggering
 
 jobs:
   build:
@@ -33,9 +33,18 @@ jobs:
           sudo apt-get install -y git zip unzip python3-pip \
             autoconf libtool pkg-config zlib1g-dev libncurses-dev \
             cmake libffi-dev libssl-dev
-            
-      # Use your existing buildozer.spec instead of creating a new one
-            
+      
+      # Set up Android SDK
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: latest
+      
+      # Install specific Android SDK components needed
+      - name: Install Android SDK components
+        run: |
+          yes | sdkmanager --install "build-tools;30.0.3" "platforms;android-30" "platform-tools"
+          
       - name: Cache Buildozer global directory
         uses: actions/cache@v3
         with:
@@ -46,17 +55,50 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install --upgrade Cython==0.29.33 virtualenv
-          python -m pip install --upgrade buildozer
+          python -m pip install --upgrade buildozer==1.5.0
           
-      # Add this to avoid SSL verification issues
+      # Fix package name space issue in buildozer.spec
+      - name: Fix buildozer.spec
+        run: |
+          sed -i 's/package.name =asif/package.name = asif/' buildozer.spec
+          sed -i 's/source.include_exts = py,png,jpg,kv,atlas.csv/source.include_exts = py,png,jpg,kv,atlas,csv/' buildozer.spec
+          sed -i 's/source.include_patterns = assets\/,images\/.png\/.csv/source.include_patterns = assets\/*,images\/*.png,images\/*.csv/' buildozer.spec
+          # Add necessary Android settings
+          if ! grep -q "android.api =" buildozer.spec; then
+            sed -i '/^\[app\]/a android.api = 30' buildozer.spec
+          fi
+          if ! grep -q "android.minapi =" buildozer.spec; then
+            sed -i '/^\[app\]/a android.minapi = 21' buildozer.spec
+          fi
+          if ! grep -q "android.sdk =" buildozer.spec; then
+            sed -i '/^\[app\]/a android.sdk = 30' buildozer.spec
+          fi
+          if ! grep -q "android.ndk =" buildozer.spec; then
+            sed -i '/^\[app\]/a android.ndk = 25b' buildozer.spec
+          fi
+          if ! grep -q "android.ndk_api =" buildozer.spec; then
+            sed -i '/^\[app\]/a android.ndk_api = 21' buildozer.spec
+          fi
+          if ! grep -q "android.accept_sdk_license =" buildozer.spec; then
+            sed -i '/^\[app\]/a android.accept_sdk_license = True' buildozer.spec
+          fi
+          # Point to pre-installed build tools
+          echo "android.sdk_path = /usr/local/lib/android/sdk" >> buildozer.spec
+          # Add internet permission
+          echo "android.permissions = android.permission.INTERNET" >> buildozer.spec
+          
       - name: Configure Git for https connections
         run: |
           git config --global http.sslVerify false
+          export GIT_HTTP_LOW_SPEED_LIMIT=1000
+          export GIT_HTTP_LOW_SPEED_TIME=300
           
       - name: Build with Buildozer
         run: |
-          export GIT_HTTP_LOW_SPEED_LIMIT=1000
-          export GIT_HTTP_LOW_SPEED_TIME=300
+          export GRADLE_OPTS="-Xmx4096m -XX:MaxPermSize=4096m"
+          export JAVA_OPTS="-Xmx4096m -XX:MaxPermSize=4096m"
+          export PATH=$PATH:/usr/local/lib/android/sdk/build-tools/30.0.3
+          export ANDROID_HOME=/usr/local/lib/android/sdk
           buildozer android debug -v
           
       - name: Upload APK artifact
@@ -65,3 +107,12 @@ jobs:
           name: app-debug
           path: bin/*.apk
           if-no-files-found: error
+          
+      # Optional: Create Release (when pushing tag)
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: bin/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
