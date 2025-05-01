@@ -35,7 +35,7 @@ jobs:
             autoconf libtool pkg-config zlib1g-dev libncurses-dev \
             cmake libffi-dev libssl-dev
       
-      # Use direct command to install Android SDK rather than the action
+      # Use direct command to install Android SDK
       - name: Setup Android SDK
         run: |
           wget https://dl.google.com/android/repository/commandlinetools-linux-8512546_latest.zip -O cmdline-tools.zip
@@ -45,30 +45,6 @@ jobs:
           echo "y" | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-31" "build-tools;30.0.3" "ndk;23.1.7779620"
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
-          
-      - name: Fix buildozer.spec
-        run: |
-          # Fix package.name with no space after equals
-          sed -i 's/package.name =asif/package.name = asif/' buildozer.spec
-          
-          # Fix source.include_exts
-          sed -i 's/source.include_exts = py,png,jpg,kv,atlas.csv/source.include_exts = py,png,jpg,kv,atlas,csv/' buildozer.spec
-          
-          # Fix source.include_patterns
-          sed -i 's|source.include_patterns = assets/,images/.png/.csv|source.include_patterns = assets/*,images/*.png,images/*.csv|' buildozer.spec
-          
-          # Add Android permissions
-          sed -i 's|#android.permissions = .*|android.permissions = android.permission.INTERNET|' buildozer.spec
-          
-          # Set Android API levels
-          sed -i 's|#android.api = .*|android.api = 31|' buildozer.spec
-          sed -i 's|#android.minapi = .*|android.minapi = 21|' buildozer.spec
-          
-          # Accept license automatically
-          sed -i 's|# android.accept_sdk_license = .*|android.accept_sdk_license = True|' buildozer.spec
-          
-          # Skip updates to speed up build
-          sed -i 's|# android.skip_update = .*|android.skip_update = True|' buildozer.spec
           
       - name: Cache Buildozer global directory
         uses: actions/cache@v3
